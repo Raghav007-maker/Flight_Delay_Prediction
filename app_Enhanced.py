@@ -48,23 +48,18 @@ def map_callsign_to_airline(callsign):
     return 'Unknown Airline', 'N/A'
 
 st.set_page_config(
-    page_title="US Flight Delay Predictor",
+    page_title="Flight Delay Predictor",
     page_icon="✈️",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-st.markdown("""
-    <style>
-    .main {padding: 0rem 1rem;}
-    .stAlert {padding: 1rem; margin: 1rem 0;}
-    h1 {color: #1f77b4; padding-bottom: 0.5rem; border-bottom: 2px solid #1f77b4;}
-    .prediction-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 2rem; border-radius: 1rem; color: white; text-align: center; margin: 1rem 0;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+# Load custom CSS
+try:
+    with open("style.css", "r") as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+except FileNotFoundError:
+    pass  # Fallback to defaults if missing
 
 # Initialize session state
 if 'prediction_count' not in st.session_state:
@@ -76,8 +71,13 @@ if 'cached_predictions' not in st.session_state:
 if 'cache_time' not in st.session_state:
     st.session_state.cache_time = None
 
-st.title("✈️ US Flight Delay Probability Prediction System")
-st.markdown("**Powered by XGBoost ML | Trained on 300K US Flights (2022)**")
+# Hero Banner
+st.markdown("""
+<div class="hero-container">
+    <div class="main-title">✈️ Flight Delay Predictor</div>
+    <div class="sub-title">Powered by XGBoost ML | Trained on 300K Flights (2022)</div>
+</div>
+""", unsafe_allow_html=True)
 
 # Check files
 files_ok, missing_files = check_project_files()
@@ -110,7 +110,11 @@ api_source = st.sidebar.radio(
     ["AviationStack", "OpenSky Network (Free & Real-time)"],
     help="OpenSky provides real-time data without API key!"
 )
-
+skip_us_filter = st.sidebar.checkbox(
+    "Show all flights (disable US filter)",
+    value=True,
+    help="When checked the app will display every flight returned by the API, not only US‑based ones."
+)
 # API Settings based on selection
 with st.sidebar.expander("🔑 API Settings", expanded=True):
     if api_source == "AviationStack":
@@ -137,12 +141,26 @@ with st.sidebar.expander("🔑 API Settings", expanded=True):
         st.success("✨ Real-time data (10-second updates)")
         st.success("🎯 4000 calls/day limit")
         API_KEY = None  # Not needed for OpenSky
+        # US filter checkbox moved to global sidebar section
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 Model Performance")
-st.sidebar.metric("Accuracy", "79.62%")
-st.sidebar.metric("ROC-AUC", "0.85+")
-st.sidebar.metric("Training Data", "300K flights")
+st.sidebar.markdown("""
+<div class="metric-card">
+    <div class="metric-label">Accuracy</div>
+    <div class="metric-value">79.62%</div>
+</div>
+<div style="height: 10px;"></div>
+<div class="metric-card">
+    <div class="metric-label">ROC-AUC</div>
+    <div class="metric-value">0.85+</div>
+</div>
+<div style="height: 10px;"></div>
+<div class="metric-card">
+    <div class="metric-label">Training Data</div>
+    <div class="metric-value">300K Flights</div>
+</div>
+""", unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Total predictions: {st.session_state.prediction_count}")
@@ -242,7 +260,7 @@ def predict_delay(flight_data):
     except Exception as e:
         return None
 
-def get_live_flights(api_key, limit=50):
+def get_live_flights(api_key, limit=50, skip_us_filter=False):
     """Fetch live flights from AviationStack"""
     try:
         url = "http://api.aviationstack.com/v1/flights"
@@ -399,12 +417,13 @@ with tab1:
     else:
         st.markdown("**Analyze real-time US domestic flights - Summary View Only**")
     
-    col1, col2 = st.columns([1, 4])
+    col1, col2 = st.columns([1, 2])
     
     with col1:
         num_flights = st.number_input("Number of flights", min_value=10, max_value=100, value=30, step=10)
     
     with col2:
+        st.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
         fetch_button = st.button("🔄 Fetch Flights", type="primary", use_container_width=True)
     
     # Check cache
@@ -428,7 +447,7 @@ with tab1:
                 with st.spinner("🌐 Fetching live flights..."):
                     # Choose API based on selection
                     if api_source == "AviationStack":
-                        flights = get_live_flights(API_KEY, limit=num_flights)
+                        flights = get_live_flights(API_KEY, limit=num_flights, skip_us_filter=skip_us_filter)
                     else:
                         flights = get_live_flights_opensky(limit=num_flights)
                 
@@ -500,31 +519,31 @@ with tab1:
                 avg_delay_prob = df_results['Delay_Probability'].mean()
                 
                 # Summary metrics
-                col1, col2, col3, col4 = st.columns(4)
-                
-                with col1:
-                    st.metric("Total Flights", total_flights)
-                
-                with col2:
-                    st.metric("High Risk", high_risk, 
-                             delta=f"{(high_risk/total_flights*100):.1f}%", 
-                             delta_color="inverse")
-                
-                with col3:
-                    st.metric("Medium Risk", medium_risk, 
-                             delta=f"{(medium_risk/total_flights*100):.0f}%")
-                
-                with col4:
-                    st.metric("Low Risk", low_risk, 
-                             delta=f"{(low_risk/total_flights*100):.0f}%", 
-                             delta_color="normal")
-                
-                # Average delay banner
                 st.markdown(f"""
-                <div style='background: #4A5568; padding: 1.5rem; border-radius: 10px; 
-                            text-align: center; margin: 1.5rem 0; color: white;
-                            border: 2px solid #667eea;'>
-                    <h2 style='margin: 0; font-size: 1.8rem;'>📈 Average Delay Probability: {avg_delay_prob*100:.1f}%</h2>
+                <div style="display: flex; gap: 1rem; margin-bottom: 2rem;">
+                    <div class="metric-card" style="flex: 1;">
+                        <div class="metric-label">Total Flights</div>
+                        <div class="metric-value">{total_flights}</div>
+                    </div>
+                    <div class="metric-card" style="flex: 1;">
+                        <div class="metric-label" style="color: #ff4b4b;">High Risk</div>
+                        <div class="metric-value" style="color: #ff4b4b;">{high_risk}</div>
+                        <div style="font-size: 0.8rem; color: #a0aec0;">{(high_risk/total_flights*100) if total_flights > 0 else 0:.1f}%</div>
+                    </div>
+                    <div class="metric-card" style="flex: 1;">
+                        <div class="metric-label" style="color: #faca2b;">Medium Risk</div>
+                        <div class="metric-value" style="color: #faca2b;">{medium_risk}</div>
+                        <div style="font-size: 0.8rem; color: #a0aec0;">{(medium_risk/total_flights*100) if total_flights > 0 else 0:.1f}%</div>
+                    </div>
+                    <div class="metric-card" style="flex: 1;">
+                        <div class="metric-label" style="color: #21c354;">Low Risk</div>
+                        <div class="metric-value" style="color: #21c354;">{low_risk}</div>
+                        <div style="font-size: 0.8rem; color: #a0aec0;">{(low_risk/total_flights*100) if total_flights > 0 else 0:.1f}%</div>
+                    </div>
+                </div>
+                
+                <div class="prediction-card">
+                    <h2 style='margin: 0; font-size: 2rem;'>📈 Average Delay Probability: {avg_delay_prob*100:.1f}%</h2>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -654,7 +673,10 @@ Model: XGBoost | Accuracy: 79.62% | ROC-AUC: 0.85+
                     fig_pie.update_layout(
                         title="Risk Distribution",
                         height=350,
-                        showlegend=True
+                        showlegend=True,
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='#f0f0f0')
                     )
                     st.plotly_chart(fig_pie, use_container_width=True)
                 
@@ -669,7 +691,13 @@ Model: XGBoost | Accuracy: 79.62% | ROC-AUC: 0.85+
                         color=airline_counts.values,
                         color_continuous_scale='Blues'
                     )
-                    fig_bar.update_layout(height=350, showlegend=False)
+                    fig_bar.update_layout(
+                        height=350, 
+                        showlegend=False,
+                        paper_bgcolor='rgba(0,0,0,0)',
+                        plot_bgcolor='rgba(0,0,0,0)',
+                        font=dict(color='#f0f0f0')
+                    )
                     st.plotly_chart(fig_bar, use_container_width=True)
                 
                 st.markdown("### Delay Probability Distribution")
@@ -684,7 +712,12 @@ Model: XGBoost | Accuracy: 79.62% | ROC-AUC: 0.85+
                 fig_hist.add_vline(x=avg_delay_prob, line_dash="dash", 
                                   line_color="red", 
                                   annotation_text=f"Avg: {avg_delay_prob*100:.1f}%")
-                fig_hist.update_layout(height=300)
+                fig_hist.update_layout(
+                    height=300,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#f0f0f0')
+                )
                 st.plotly_chart(fig_hist, use_container_width=True)
                 
                 st.markdown("### Average Delay Probability by Airline")
@@ -698,7 +731,13 @@ Model: XGBoost | Accuracy: 79.62% | ROC-AUC: 0.85+
                     color=airline_avg.values * 100,
                     color_continuous_scale='RdYlGn_r'
                 )
-                fig_airline.update_layout(height=300, showlegend=False)
+                fig_airline.update_layout(
+                    height=300, 
+                    showlegend=False,
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    font=dict(color='#f0f0f0')
+                )
                 st.plotly_chart(fig_airline, use_container_width=True)
                 
             else:
